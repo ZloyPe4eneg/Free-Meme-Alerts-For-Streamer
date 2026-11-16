@@ -19,7 +19,7 @@ async function api(path, body) {
   });
   let data = {};
   try { data = await r.json(); } catch {}
-  if (!r.ok) throw new Error(data.error || 'Ошибка ' + r.status);
+  if (!r.ok) throw Object.assign(new Error(data.error || 'Ошибка ' + r.status), { status: r.status });
   return data;
 }
 

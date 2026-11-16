@@ -1,6 +1,6 @@
 {
   "name": "free-meme-alerts",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Бесплатные мем-алерты для стрима: зрители отправляют мемы со звуком в OBS",
   "main": "server.js",
   "scripts": {

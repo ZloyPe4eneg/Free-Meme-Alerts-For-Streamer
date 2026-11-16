@@ -15,6 +15,10 @@
   #nick { font-size: 3.4vh; font-weight: 700; color: #ff4d2e; letter-spacing: -.02em; }
   #msg { font-size: 2.8vh; font-weight: 600; overflow-wrap: anywhere; }
   #hint { position: fixed; left: 16px; bottom: 16px; font-size: 14px; color: #fff; background: #151517; border: 1px solid #ff4d2e; padding: 10px 14px; border-radius: 6px; display: none; cursor: pointer; }
+  #gate { position: fixed; inset: 0; display: none; place-items: center; }
+  #gate > div { background: #151517; color: #f4f4f5; border: 1px solid #ff4d2e; border-radius: 8px; padding: 24px 28px; max-width: min(520px, 90vw); text-align: center; font-size: 18px; line-height: 1.4; }
+  #gateCode { font: 700 56px/1.1 Consolas, monospace; letter-spacing: .12em; color: #ff4d2e; margin: 12px 0; }
+  #gateCode:empty { display: none; }
   @keyframes pop { from { transform: scale(.4) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes out { to { transform: scale(.6) translateY(8vh); opacity: 0; } }
 </style>
@@ -28,6 +32,7 @@
 </div>
 <audio id="a"></audio>
 <div id="hint">Браузер заблокировал звук — нажмите сюда, чтобы включить. В OBS этого не требуется.</div>
+<div id="gate"><div><div id="gateTitle"></div><div id="gateCode"></div><div id="gateText"></div></div></div>
 <script>
 'use strict';
 const id = location.pathname.split('/').filter(Boolean)[1];
@@ -107,17 +112,51 @@ hint.addEventListener('click', () => {
   if (playing && a.src) a.play().catch(() => {});
 });
 
-const es = new EventSource(`/api/channels/${id}/events?key=${encodeURIComponent(key)}`);
-es.addEventListener('settings', (e) => { settings = JSON.parse(e.data); a.volume = settings.volume / 100; });
-es.addEventListener('play', (e) => { if (queue.length < 20) queue.push(JSON.parse(e.data)); next(); });
-es.addEventListener('skip', () => { if (playing) finish(); });
-es.addEventListener('clear', () => { queue = []; if (playing) finish(); });
-// Сервер отклонил подключение (неверный ключ) — браузер больше не переподключается сам.
-es.addEventListener('error', () => {
-  if (es.readyState !== EventSource.CLOSED) return;
-  hint.textContent = 'Оверлей не подключился: проверьте ссылку — скопируйте её заново из панели стримера.';
-  hint.style.display = 'block';
-});
+// ---------- подключение ----------
+// Ссылки мало: стример должен один раз разрешить это устройство в панели. Разрешение (ticket)
+// хранится в браузере устройства, поэтому повторно подтверждать не нужно.
+const TICKET_KEY = 'fma:ticket:' + id;
+const getTicket = () => { try { return localStorage.getItem(TICKET_KEY) || ''; } catch { return ''; } };
+const setTicket = (t) => { try { t ? localStorage.setItem(TICKET_KEY, t) : localStorage.removeItem(TICKET_KEY); } catch {} };
+
+function gate(title, code, text) {
+  document.getElementById('gate').style.display = title ? 'grid' : 'none';
+  document.getElementById('gateTitle').textContent = title || '';
+  document.getElementById('gateCode').textContent = code || '';
+  document.getElementById('gateText').textContent = text || '';
+}
+
+let retryMs = 3000, failures = 0, stopped = false;
+function connect() {
+  const es = new EventSource(`/api/channels/${id}/overlay-events?key=${encodeURIComponent(key)}&ticket=${encodeURIComponent(getTicket())}`);
+  es.addEventListener('open', () => { retryMs = 3000; failures = 0; });
+  es.addEventListener('pending', (e) => {
+    gate('Оверлей ждёт разрешения стримера', JSON.parse(e.data).code,
+      'Откройте панель стримера и нажмите «Разрешить» рядом с этим кодом. Это нужно один раз для каждого устройства.');
+  });
+  es.addEventListener('ticket', (e) => { setTicket(JSON.parse(e.data).ticket); gate(); });
+  es.addEventListener('settings', (e) => { settings = JSON.parse(e.data); a.volume = settings.volume / 100; gate(); });
+  es.addEventListener('play', (e) => { if (queue.length < 20) queue.push(JSON.parse(e.data)); next(); });
+  es.addEventListener('skip', () => { if (playing) finish(); });
+  es.addEventListener('clear', () => { queue = []; if (playing) finish(); });
+  es.addEventListener('denied', (e) => {
+    stopped = true;
+    es.close();
+    setTicket('');
+    queue = []; if (playing) finish();
+    if (JSON.parse(e.data).reason === 'reset') gate('Доступ оверлея сброшен', '', 'Стример обновил ссылку. Вставьте в источник новую ссылку оверлея из панели стримера.');
+    else gate('Стример отклонил это устройство', '', 'Если это ваш оверлей — обновите страницу и разрешите устройство в панели стримера.');
+  });
+  // Переподключаемся сами: в адресе должно быть актуальное разрешение.
+  es.addEventListener('error', () => {
+    es.close();
+    if (stopped) return;
+    if (++failures >= 2) gate('Оверлей не подключился', '', 'Нет связи с сервером, либо ссылка недействительна или устройство отклонено. Проверьте ссылку в панели стримера. Повторяем попытку…');
+    setTimeout(connect, retryMs);
+    retryMs = Math.min(retryMs * 2, 30000);
+  });
+}
+connect();
 </script>
 </body>
 </html>

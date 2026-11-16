@@ -14,11 +14,21 @@
   <section class="hero">
     <h1>Мемы на стриме. Бесплатно для всех.</h1>
     <p>Зрители выбирают мем со звуком из огромной библиотеки Coub и отправляют его прямо в эфир — без доната, регистрации и загрузки файлов.</p>
-    <form id="create" class="row">
-      <div class="grow"><input type="text" id="name" maxlength="40" placeholder="Название канала, например: Стрим Васи" aria-label="Название канала" required></div>
+    <form id="create" class="panel stack" style="max-width:520px">
+      <label class="field">Название канала
+        <input type="text" id="name" maxlength="40" placeholder="Например: Стрим Васи" autocomplete="off" required>
+      </label>
+      <div class="row">
+        <label class="field grow">Пароль от панели стримера
+          <input type="password" id="password" minlength="8" maxlength="128" autocomplete="new-password" required>
+        </label>
+        <label class="field grow">Пароль ещё раз
+          <input type="password" id="password2" minlength="8" maxlength="128" autocomplete="new-password" required>
+        </label>
+      </div>
       <button class="primary big" type="submit">Создать канал</button>
+      <p class="muted small" style="margin:0">Не короче 8 символов. Запомните пароль: только по нему открывается панель стримера, сменить или восстановить его нельзя.</p>
     </form>
-    <p class="muted small" style="margin-top:10px">Регистрация не нужна: ключ управления сохранится в этом браузере.</p>
   </section>
 
   <section id="mine" class="panel" hidden>
@@ -34,7 +44,9 @@
 </div>
 <script src="/common.js"></script>
 <script>
-const mine = store.get('channels', []);
+// В браузере хранится только список «адрес + название»; доступ к панели даёт пароль.
+const mine = store.get('channels', []).filter(c => /^[a-z0-9]{16}$/.test(c.id)).map(c => ({ id: c.id, name: c.name }));
+store.set('channels', mine);
 if (mine.length) {
   $('#mine').hidden = false;
   $('#list').append(...mine.map(c => el('div', { class: 'item' },
@@ -44,11 +56,12 @@ if (mine.length) {
 $('#create').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector('button');
+  if ($('#password').value !== $('#password2').value) return toast('Пароли не совпадают', true);
   btn.disabled = true;
   try {
     const name = $('#name').value.trim();
-    const c = await api('channels', { name });
-    store.set('channels', [{ id: c.id, name, key: c.key }, ...mine]);
+    const c = await api('channels', { name, password: $('#password').value });
+    store.set('channels', [{ id: c.id, name }, ...mine]);
     location.href = '/dashboard/' + c.id;
   } catch (err) { toast(err.message, true); btn.disabled = false; }
 });

@@ -11,31 +11,41 @@
   <header class="top">
     <a class="logo" href="/">Free<b>Meme</b>Alerts</a>
     <span class="spacer"></span>
-    <span id="conn" class="pill off">Оверлей не подключён</span>
+    <span id="conn" class="pill off" hidden>Оверлей не подключён</span>
+    <button id="logout" hidden>Выйти</button>
   </header>
 
-  <div id="nokey" class="panel" hidden>
-    <h2>Нет ключа управления</h2>
-    <p class="muted">Панель открывается только в браузере, где был создан канал, или по личной ссылке для входа. Если вы зритель — вам сюда: <a id="viewerHint" href="#">страница отправки мемов</a>.</p>
-  </div>
+  <form id="login" class="panel stack" style="max-width:420px" hidden>
+    <h2>Вход в панель стримера</h2>
+    <p class="muted small" style="margin:0">Панель открывается только по паролю, заданному при создании канала. Если вы зритель — вам сюда: <a id="viewerHint" href="#">страница отправки мемов</a>.</p>
+    <label class="field">Пароль
+      <input type="password" id="password" maxlength="128" autocomplete="current-password" required>
+    </label>
+    <button class="primary" type="submit">Войти</button>
+  </form>
 
   <div id="app" class="grid2" hidden>
     <div class="stack">
+      <section id="requests" class="panel notice stack" hidden>
+        <h2>Запрос на подключение оверлея</h2>
+        <p class="muted small" style="margin:0">Кто-то открыл ссылку оверлея на новом устройстве. Разрешайте, только если видите этот же код у себя в OBS. Если это не вы — отклоните и сбросьте доступ оверлея.</p>
+        <div id="requestList"></div>
+      </section>
+
       <section class="panel stack">
         <h2>Ссылки</h2>
         <label class="field">Для зрителей — киньте в чат или описание стрима
           <span class="copy"><input type="text" id="viewerUrl" readonly><button data-copy="viewerUrl">Копировать</button></span>
         </label>
-        <label class="field">Оверлей для OBS — источник «Браузер», 1920×1080. Не показывайте эту ссылку на стриме
-          <span class="copy"><input type="text" id="overlayUrl" readonly value="••••••••••••••••"><button data-copy="overlayUrl">Копировать</button></span>
+        <label class="field">Оверлей для OBS — источник «Браузер», 1920×1080
+          <span class="copy"><input type="text" readonly value="••••••••••••••••"><button data-copy="overlayUrl">Копировать</button></span>
         </label>
-        <label class="field">Личная ссылка на эту панель (для входа с другого устройства) — никому не давайте
-          <span class="copy"><input type="text" readonly value="••••••••••••••••"><button data-copy="adminUrl">Копировать</button></span>
-        </label>
+        <p class="muted small" style="margin:0">Одной ссылки оверлея недостаточно: каждое новое устройство ждёт вашего разрешения в этой панели. Если ссылка попала к посторонним — сбросьте доступ.</p>
         <div class="row">
           <button id="test" class="primary">Тестовый алерт</button>
           <button id="skip">Пропустить текущий</button>
           <button id="clear" class="danger">Очистить очередь</button>
+          <button id="reset" class="danger">Сбросить доступ оверлея</button>
         </div>
       </section>
 
@@ -68,22 +78,30 @@
 <script src="/common.js"></script>
 <script>
 const id = channelId();
-let channelsList = store.get('channels', []);
-let me = channelsList.find(c => c.id === id);
-const hashKey = new URLSearchParams(location.hash.slice(1)).get('key');
-if (hashKey) {
-  // ключ из личной ссылки: запоминаем и убираем из адресной строки
-  me = { id, name: me ? me.name : 'Канал', key: hashKey };
-  channelsList = [me, ...channelsList.filter(c => c.id !== id)];
-  store.set('channels', channelsList);
-  history.replaceState(null, '', location.pathname);
+const FIELDS = ['name', 'enabled', 'moderation', 'showSender', 'randomPosition', 'cooldownSec', 'maxDurationSec', 'volume', 'sizePct'];
+const links = { viewerUrl: location.origin + '/c/' + id, overlayUrl: '' };
+let events = null, bound = false, restored = false;
+
+// Выполняет действие стримера. Возвращает ответ сервера или null (ошибка уже показана).
+// Доступ даёт сессия в защищённой cookie: в коде страницы нет ни пароля, ни ключа.
+async function admin(what, extra) {
+  try {
+    const r = await api(`channels/${id}/admin`, { do: what, ...extra });
+    links.overlayUrl = `${location.origin}/overlay/${id}?key=${r.overlayKey}`;
+    return r;
+  } catch (e) {
+    if (e.status === 401) showLogin(); else toast(e.message, true);
+    return null;
+  }
 }
 
-const FIELDS = ['name', 'enabled', 'moderation', 'showSender', 'randomPosition', 'cooldownSec', 'maxDurationSec', 'volume', 'sizePct'];
-const links = { viewerUrl: location.origin + '/c/' + id, overlayUrl: '', adminUrl: '' };
-// Возвращает ответ сервера или null, если действие не удалось (ошибка уже показана).
-const admin = (what, extra) => api(`channels/${id}/admin`, { key: me.key, do: what, ...extra })
-  .catch(e => { toast(e.message, true); return null; });
+function showLogin() {
+  if (events) { events.close(); events = null; }
+  $('#app').hidden = $('#conn').hidden = $('#logout').hidden = true;
+  $('#login').hidden = false;
+  $('#viewerHint').href = '/c/' + id;
+  $('#password').focus();
+}
 
 function readForm() {
   const s = {};
@@ -114,12 +132,23 @@ function itemRow(it, buttons) {
       el('div', { class: 'muted small' }, it.nick + (it.message ? ': ' + it.message : ''))),
     buttons);
 }
+function rememberChannel(name) {
+  const list = store.get('channels', []).filter(c => c.id !== id);
+  store.set('channels', [{ id, name }, ...list]);
+}
 function render(state) {
   $('#conn').className = 'pill ' + (state.overlayConnected ? 'on' : 'off');
-  $('#conn').textContent = state.overlayConnected ? 'Оверлей подключён' : 'Оверлей не подключён';
+  $('#conn').textContent = !state.overlayConnected ? 'Оверлей не подключён'
+    : 'Оверлей подключён' + (state.overlays > 1 ? ` (устройств: ${state.overlays})` : '');
   fillForm(state.settings);
   store.set('settings:' + id, state.settings);
-  if (me.name !== state.settings.name) { me.name = state.settings.name; store.set('channels', channelsList); }
+  rememberChannel(state.settings.name);
+
+  $('#requests').hidden = !state.requests.length;
+  $('#requestList').replaceChildren(...state.requests.map(r => el('div', { class: 'item' },
+    el('div', { class: 'info' }, el('div', { class: 'code' }, r.code), el('div', { class: 'muted small' }, 'код на экране устройства')),
+    el('button', { class: 'primary', onclick: () => admin('allowDevice', { deviceId: r.deviceId }) }, 'Разрешить'),
+    el('button', { class: 'danger', onclick: () => admin('denyDevice', { deviceId: r.deviceId }) }, 'Отклонить'))));
 
   $('#pendingCount').textContent = state.pending.length ? `(${state.pending.length})` : '';
   $('#pending').replaceChildren(...(state.pending.length ? state.pending.map(it => itemRow(it, [
@@ -131,28 +160,9 @@ function render(state) {
     el('button', { onclick: () => admin('replay', { itemId: it.id }) }, 'Повторить'))) : [el('div', { class: 'empty' }, 'Здесь будут показанные мемы.')]));
 }
 
-async function start() {
-  const first = me && await admin('hello');
-  if (!first) {
-    $('#nokey').hidden = false;
-    $('#viewerHint').href = '/c/' + id;
-    return;
-  }
-  links.overlayUrl = `${location.origin}/overlay/${id}?key=${first.overlayKey}`;
-  links.adminUrl = `${location.origin}/dashboard/${id}#key=${me.key}`;
-  $('#viewerUrl').value = links.viewerUrl;
-  $('#app').hidden = false;
-
-  let restored = false;
-  const es = new EventSource(`/api/channels/${id}/events?key=${encodeURIComponent(me.key)}`);
-  es.addEventListener('state', (e) => {
-    const state = JSON.parse(e.data);
-    // сервер перезапустился и забыл настройки — возвращаем сохранённые в браузере
-    const saved = store.get('settings:' + id, null);
-    if (state.fresh && saved && !restored) { restored = true; admin('settings', { settings: saved }); return; }
-    render(state);
-  });
-
+function bindControls() {
+  if (bound) return;
+  bound = true;
   let saveTimer;
   for (const f of FIELDS) {
     $('#' + f).addEventListener('input', () => {
@@ -165,7 +175,47 @@ async function start() {
   $('#test').addEventListener('click', async () => { if (await admin('test')) toast('Тестовый алерт отправлен в оверлей'); });
   $('#skip').addEventListener('click', () => admin('skip'));
   $('#clear').addEventListener('click', async () => { if (await admin('clear')) toast('Очередь очищена'); });
+  $('#reset').addEventListener('click', async () => {
+    if (!confirm('Старая ссылка оверлея перестанет работать, все устройства отключатся. Новую ссылку нужно будет вставить в OBS и снова разрешить устройство. Продолжить?')) return;
+    if (await admin('resetOverlay')) toast('Доступ сброшен. Скопируйте новую ссылку оверлея в OBS');
+  });
+  $('#logout').addEventListener('click', async () => {
+    await api(`channels/${id}/logout`, {}).catch(() => {});
+    showLogin();
+  });
 }
+
+async function start() {
+  if (!await admin('hello')) return; // нет сессии — показана форма входа
+  $('#login').hidden = true;
+  $('#app').hidden = $('#conn').hidden = $('#logout').hidden = false;
+  $('#viewerUrl').value = links.viewerUrl;
+  bindControls();
+
+  events = new EventSource(`/api/channels/${id}/events`);
+  events.addEventListener('state', (e) => {
+    const state = JSON.parse(e.data);
+    // сервер перезапустился и забыл настройки — возвращаем сохранённые в браузере
+    const saved = store.get('settings:' + id, null);
+    if (state.fresh && saved && !restored) { restored = true; admin('settings', { settings: saved }); return; }
+    render(state);
+  });
+  // сервер отказал в подключении — скорее всего, истекла сессия
+  events.addEventListener('error', () => { if (events && events.readyState === EventSource.CLOSED) admin('hello'); });
+}
+
+$('#login').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    await api(`channels/${id}/login`, { password: $('#password').value });
+    $('#password').value = '';
+    await start();
+  } catch (err) { toast(err.message, true); }
+  btn.disabled = false;
+});
+
 start();
 </script>
 </body>
