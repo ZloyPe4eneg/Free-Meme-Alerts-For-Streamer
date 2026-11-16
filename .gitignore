@@ -1,5 +1,23 @@
-node_modules/
+# Секреты и данные сервера — никогда не коммитить
+# data/secret.txt — секрет, из которого выводятся ключи всех каналов
+# data/channels.json — настройки каналов
 data/
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Зависимости и журналы
+node_modules/
 *.log
+npm-debug.log*
+
+# Служебные файлы системы и редакторов
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
 .claude/
+*.tmp

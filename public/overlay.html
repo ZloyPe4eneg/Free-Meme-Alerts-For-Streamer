@@ -87,7 +87,7 @@ function next() {
       a.src = it.meme.audio;
       a.volume = settings.volume / 100;
       a.onended = finish;
-      a.play().catch(() => { soundBlocked = true; hint.style.display = 'block'; });
+      a.play().catch(() => { soundBlocked = true; hint.textContent = SOUND_HINT; hint.style.display = 'block'; });
       endTimer = setTimeout(finish, maxMs);
     } else {
       const loopMs = (v.duration || it.meme.duration || 5) * 2000;
@@ -100,7 +100,9 @@ function next() {
   v.src = it.meme.video;
 }
 
+const SOUND_HINT = hint.textContent;
 hint.addEventListener('click', () => {
+  if (!soundBlocked) return;
   hint.style.display = 'none'; soundBlocked = false;
   if (playing && a.src) a.play().catch(() => {});
 });
@@ -110,6 +112,12 @@ es.addEventListener('settings', (e) => { settings = JSON.parse(e.data); a.volume
 es.addEventListener('play', (e) => { if (queue.length < 20) queue.push(JSON.parse(e.data)); next(); });
 es.addEventListener('skip', () => { if (playing) finish(); });
 es.addEventListener('clear', () => { queue = []; if (playing) finish(); });
+// Сервер отклонил подключение (неверный ключ) — браузер больше не переподключается сам.
+es.addEventListener('error', () => {
+  if (es.readyState !== EventSource.CLOSED) return;
+  hint.textContent = 'Оверлей не подключился: проверьте ссылку — скопируйте её заново из панели стримера.';
+  hint.style.display = 'block';
+});
 </script>
 </body>
 </html>

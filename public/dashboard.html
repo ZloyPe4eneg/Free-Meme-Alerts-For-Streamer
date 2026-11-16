@@ -81,7 +81,9 @@ if (hashKey) {
 
 const FIELDS = ['name', 'enabled', 'moderation', 'showSender', 'randomPosition', 'cooldownSec', 'maxDurationSec', 'volume', 'sizePct'];
 const links = { viewerUrl: location.origin + '/c/' + id, overlayUrl: '', adminUrl: '' };
-const admin = (what, extra) => api(`channels/${id}/admin`, { key: me.key, do: what, ...extra }).catch(e => { toast(e.message, true); throw e; });
+// Возвращает ответ сервера или null, если действие не удалось (ошибка уже показана).
+const admin = (what, extra) => api(`channels/${id}/admin`, { key: me.key, do: what, ...extra })
+  .catch(e => { toast(e.message, true); return null; });
 
 function readForm() {
   const s = {};
@@ -130,14 +132,12 @@ function render(state) {
 }
 
 async function start() {
-  if (!me) {
+  const first = me && await admin('hello');
+  if (!first) {
     $('#nokey').hidden = false;
     $('#viewerHint').href = '/c/' + id;
     return;
   }
-  let first;
-  try { first = await api(`channels/${id}/admin`, { key: me.key, do: 'hello' }); }
-  catch (e) { $('#nokey').hidden = false; $('#viewerHint').href = '/c/' + id; toast(e.message, true); return; }
   links.overlayUrl = `${location.origin}/overlay/${id}?key=${first.overlayKey}`;
   links.adminUrl = `${location.origin}/dashboard/${id}#key=${me.key}`;
   $('#viewerUrl').value = links.viewerUrl;
@@ -162,9 +162,9 @@ async function start() {
     });
   }
   document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => copyText(links[b.dataset.copy])));
-  $('#test').addEventListener('click', () => admin('test').then(() => toast('Тестовый алерт отправлен в оверлей')));
+  $('#test').addEventListener('click', async () => { if (await admin('test')) toast('Тестовый алерт отправлен в оверлей'); });
   $('#skip').addEventListener('click', () => admin('skip'));
-  $('#clear').addEventListener('click', () => admin('clear').then(() => toast('Очередь очищена')));
+  $('#clear').addEventListener('click', async () => { if (await admin('clear')) toast('Очередь очищена'); });
 }
 start();
 </script>
