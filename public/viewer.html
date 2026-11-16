@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Отправить мем на стрим — FreeMemeAlerts</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="logo" href="/">Free<b>Meme</b>Alerts</a>
+    <span class="spacer"></span>
+    <span id="live" class="pill">…</span>
+  </header>
+
+  <h1 id="title" style="font-size:clamp(1.6rem,4vw,2.4rem)">Отправь мем на стрим</h1>
+  <p id="sub" class="muted">Бесплатно. Выбери мем — он появится в эфире со звуком.</p>
+
+  <section class="panel stack">
+    <div class="row">
+      <label class="field grow">Твой ник<input type="text" id="nick" maxlength="24" placeholder="Аноним"></label>
+      <label class="field grow" style="flex:2">Сообщение (необязательно)<input type="text" id="message" maxlength="100" placeholder="Привет со дна чата"></label>
+    </div>
+    <form id="search" class="row">
+      <div class="grow"><input type="search" id="q" maxlength="120" placeholder="Поиск мема или ссылка на coub.com/view/…" aria-label="Поиск мема"></div>
+      <button class="primary" type="submit">Найти</button>
+    </form>
+    <div id="chips" class="chips"></div>
+  </section>
+
+  <div id="memes" class="memes" aria-live="polite"></div>
+  <div class="row" style="justify-content:center;margin-top:18px"><button id="more" hidden>Показать ещё</button></div>
+</div>
+
+<dialog id="preview">
+  <video id="pv" loop muted playsinline></video>
+  <audio id="pa"></audio>
+  <h3 id="ptitle"></h3>
+  <div class="row">
+    <button id="send" class="primary big grow">Отправить на стрим</button>
+    <button id="close">Закрыть</button>
+  </div>
+</dialog>
+
+<script src="/common.js"></script>
+<script>
+const id = channelId();
+const CHIPS = ['Популярное', 'мем', 'кот', 'fail', 'игры', 'аниме', 'танец', 'собака', 'музыка', 'кринж'];
+let query = '', page = 1, loading = false, current = null, info = null;
+let cooldownUntil = store.get('cd:' + id, 0);
+
+$('#nick').value = store.get('nick', '');
+$('#nick').addEventListener('change', () => store.set('nick', $('#nick').value.trim()));
+
+async function loadInfo() {
+  try {
+    info = await api('channels/' + id);
+    $('#title').textContent = 'Отправь мем на стрим «' + info.name + '»';
+    const open = info.live && info.enabled;
+    $('#live').className = 'pill ' + (open ? 'on' : 'off');
+    $('#live').textContent = !info.live ? 'Не в эфире' : info.enabled ? 'В эфире' : 'Приём мемов на паузе';
+    $('#sub').textContent = 'Бесплатно. Выбери мем — он появится в эфире со звуком.'
+      + (info.moderation ? ' Стример одобряет мемы перед показом.' : '')
+      + (info.cooldownSec ? ` Один мем раз в ${info.cooldownSec} сек.` : '');
+  } catch {}
+  tick();
+}
+
+function card(m) {
+  return el('button', { class: 'meme', title: m.title, onclick: () => openPreview(m) },
+    m.thumb ? el('img', { src: m.thumb, alt: '', loading: 'lazy' }) : null,
+    m.audio ? el('i', { 'aria-label': 'со звуком' }, '🔊') : null,
+    el('span', {}, m.title));
+}
+async function load(reset) {
+  if (loading) return;
+  loading = true;
+  const box = $('#memes');
+  if (reset) { page = 1; box.replaceChildren(el('div', { class: 'empty' }, 'Загружаем мемы…')); }
+  $('#more').hidden = true;
+  try {
+    const data = await api(`memes?q=${encodeURIComponent(query)}&page=${page}`);
+    if (reset) box.replaceChildren();
+    box.append(...data.items.map(card));
+    if (!box.children.length) box.append(el('div', { class: 'empty' }, 'Ничего не нашлось. Попробуй другой запрос.'));
+    $('#more').hidden = data.page >= data.totalPages || !data.items.length;
+  } catch (e) {
+    if (reset) box.replaceChildren(el('div', { class: 'empty' }, e.message));
+    else toast(e.message, true);
+  }
+  loading = false;
+}
+function setQuery(q) {
+  query = q;
+  $('#q').value = q;
+  document.querySelectorAll('#chips button').forEach(b => b.classList.toggle('active', (b.dataset.q || '') === q));
+  load(true);
+}
+$('#chips').append(...CHIPS.map((c, i) => el('button', { type: 'button', 'data-q': i ? c : '', onclick: () => setQuery(i ? c : '') }, c)));
+$('#search').addEventListener('submit', (e) => { e.preventDefault(); setQuery($('#q').value.trim()); });
+$('#more').addEventListener('click', () => { page++; load(false); });
+
+const dlg = $('#preview'), pv = $('#pv'), pa = $('#pa');
+function openPreview(m) {
+  current = m;
+  $('#ptitle').textContent = m.title;
+  pv.poster = m.thumb || '';
+  pv.src = m.video;
+  pa.volume = 0.6;
+  if (m.audio) pa.src = m.audio; else pa.removeAttribute('src');
+  dlg.showModal();
+  pv.play().catch(() => {});
+  if (m.audio) pa.play().catch(() => {});
+  tick();
+}
+function stopPreview() {
+  pv.pause(); pa.pause();
+  pv.removeAttribute('src'); pa.removeAttribute('src');
+  pv.load();
+}
+dlg.addEventListener('close', stopPreview);
+$('#close').addEventListener('click', () => dlg.close());
+dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+
+function tick() {
+  const left = Math.ceil((cooldownUntil - Date.now()) / 1000);
+  const btn = $('#send');
+  const closed = info && !(info.live && info.enabled);
+  btn.disabled = left > 0 || closed;
+  btn.textContent = left > 0 ? `Подожди ${left} сек.` : closed ? 'Стример сейчас не принимает мемы' : 'Отправить на стрим';
+}
+setInterval(tick, 1000);
+setInterval(loadInfo, 20000);
+
+$('#send').addEventListener('click', async () => {
+  if (!current) return;
+  const btn = $('#send');
+  btn.disabled = true;
+  try {
+    const r = await api(`channels/${id}/send`, { memeId: current.id, nick: $('#nick').value, message: $('#message').value });
+    cooldownUntil = Date.now() + r.cooldownSec * 1000;
+    store.set('cd:' + id, cooldownUntil);
+    $('#message').value = '';
+    dlg.close();
+    toast(r.moderation ? 'Отправлено! Мем появится после одобрения стримером.' : 'Отправлено! Смотри на стриме 🎉');
+  } catch (e) {
+    toast(e.message, true);
+    loadInfo();
+  }
+  tick();
+});
+
+loadInfo();
+setQuery('');
+</script>
+</body>
+</html>

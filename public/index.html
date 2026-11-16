@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FreeMemeAlerts — бесплатные мем-алерты для стрима</title>
+<meta name="description" content="Зрители бесплатно отправляют мемы со звуком прямо на ваш стрим. Без регистрации и загрузки файлов.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top"><a class="logo" href="/">Free<b>Meme</b>Alerts</a></header>
+
+  <section class="hero">
+    <h1>Мемы на стриме. Бесплатно для всех.</h1>
+    <p>Зрители выбирают мем со звуком из огромной библиотеки Coub и отправляют его прямо в эфир — без доната, регистрации и загрузки файлов.</p>
+    <form id="create" class="row">
+      <div class="grow"><input type="text" id="name" maxlength="40" placeholder="Название канала, например: Стрим Васи" aria-label="Название канала" required></div>
+      <button class="primary big" type="submit">Создать канал</button>
+    </form>
+    <p class="muted small" style="margin-top:10px">Регистрация не нужна: ключ управления сохранится в этом браузере.</p>
+  </section>
+
+  <section id="mine" class="panel" hidden>
+    <h2>Мои каналы</h2>
+    <div id="list"></div>
+  </section>
+
+  <section class="steps">
+    <div class="panel"><div class="n">1</div><h2>Создайте канал</h2><p class="muted">Получите панель управления и две ссылки: для зрителей и для OBS.</p></div>
+    <div class="panel"><div class="n">2</div><h2>Добавьте оверлей в OBS</h2><p class="muted">Источник «Браузер» со ссылкой на оверлей — мемы появятся поверх стрима со звуком.</p></div>
+    <div class="panel"><div class="n">3</div><h2>Дайте ссылку зрителям</h2><p class="muted">Они ищут мем, жмут «Отправить» — и он играет в эфире. Модерация и кулдаун настраиваются.</p></div>
+  </section>
+</div>
+<script src="/common.js"></script>
+<script>
+const mine = store.get('channels', []);
+if (mine.length) {
+  $('#mine').hidden = false;
+  $('#list').append(...mine.map(c => el('div', { class: 'item' },
+    el('div', { class: 'info' }, el('div', {}, c.name), el('div', { class: 'muted small' }, location.origin + '/c/' + c.id)),
+    el('a', { class: 'btn', href: '/dashboard/' + c.id }, 'Панель'))));
+}
+$('#create').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true;
+  try {
+    const name = $('#name').value.trim();
+    const c = await api('channels', { name });
+    store.set('channels', [{ id: c.id, name, key: c.key }, ...mine]);
+    location.href = '/dashboard/' + c.id;
+  } catch (err) { toast(err.message, true); btn.disabled = false; }
+});
+</script>
+</body>
+</html>

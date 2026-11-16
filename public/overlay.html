@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Оверлей — FreeMemeAlerts</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  #card { display: none; flex-direction: column; align-items: center; gap: 1.2vh; max-width: 60vw; }
+  #card.show { display: flex; animation: pop .45s cubic-bezier(.2, 1.4, .4, 1); }
+  #card.hide { animation: out .3s ease-in forwards; }
+  video { max-width: 60vw; max-height: 60vh; border-radius: 1.6vh; box-shadow: 0 1vh 5vh rgba(0, 0, 0, .6); background: #000; }
+  #cap { text-align: center; color: #fff; text-shadow: 0 .2vh .8vh #000, 0 0 .3vh #000; max-width: 60vw; }
+  #nick { font-size: 3.4vh; font-weight: 800; color: #b6ff3c; }
+  #msg { font-size: 2.8vh; font-weight: 600; overflow-wrap: anywhere; }
+  #hint { position: fixed; left: 16px; bottom: 16px; font-size: 14px; color: #fff; background: rgba(20, 16, 34, .92); border: 1px solid #8b5cf6; padding: 10px 14px; border-radius: 10px; display: none; cursor: pointer; }
+  @keyframes pop { from { transform: scale(.4) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes out { to { transform: scale(.6) translateY(8vh); opacity: 0; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="card">
+    <video id="v" loop muted playsinline></video>
+    <div id="cap"><div id="nick"></div><div id="msg"></div></div>
+  </div>
+</div>
+<audio id="a"></audio>
+<div id="hint">Браузер заблокировал звук — нажмите сюда, чтобы включить. В OBS этого не требуется.</div>
+<script>
+'use strict';
+const id = location.pathname.split('/').filter(Boolean)[1];
+const key = new URLSearchParams(location.search).get('key') || '';
+const card = document.getElementById('card'), v = document.getElementById('v'), a = document.getElementById('a');
+const hint = document.getElementById('hint');
+let settings = { volume: 70, maxDurationSec: 15, showSender: true };
+let queue = [], playing = false, endTimer = null, loadTimer = null, soundBlocked = false;
+
+function finish() {
+  clearTimeout(endTimer); clearTimeout(loadTimer);
+  a.onended = null; v.oncanplay = null; v.onerror = null;
+  a.pause(); a.removeAttribute('src');
+  card.classList.add('hide');
+  setTimeout(() => {
+    card.className = '';
+    v.pause(); v.removeAttribute('src'); v.load();
+    playing = false;
+    next();
+  }, 300);
+}
+
+function next() {
+  if (playing || !queue.length) return;
+  playing = true;
+  const it = queue.shift();
+  const maxMs = settings.maxDurationSec * 1000;
+  document.getElementById('nick').textContent = settings.showSender ? it.nick : '';
+  document.getElementById('msg').textContent = settings.showSender ? it.message || '' : '';
+  document.getElementById('cap').style.display = settings.showSender ? '' : 'none';
+
+  if (!it.meme) { // тест без мема: только подпись
+    v.style.display = 'none';
+    card.className = 'show';
+    endTimer = setTimeout(finish, 5000);
+    return;
+  }
+  v.style.display = '';
+  const begin = () => {
+    v.oncanplay = null;
+    clearTimeout(loadTimer);
+    card.className = 'show';
+    v.play().catch(() => {});
+    if (it.meme.audio) {
+      a.src = it.meme.audio;
+      a.volume = settings.volume / 100;
+      a.onended = finish;
+      a.play().catch(() => { soundBlocked = true; hint.style.display = 'block'; });
+      endTimer = setTimeout(finish, maxMs);
+    } else {
+      const loopMs = (v.duration || it.meme.duration || 5) * 2000;
+      endTimer = setTimeout(finish, Math.min(maxMs, Math.max(6000, loopMs)));
+    }
+  };
+  v.oncanplay = begin;
+  v.onerror = finish;
+  loadTimer = setTimeout(finish, 10000); // не загрузилось — пропускаем
+  v.src = it.meme.video;
+}
+
+hint.addEventListener('click', () => {
+  hint.style.display = 'none'; soundBlocked = false;
+  if (playing && a.src) a.play().catch(() => {});
+});
+
+const es = new EventSource(`/api/channels/${id}/events?key=${encodeURIComponent(key)}`);
+es.addEventListener('settings', (e) => { settings = JSON.parse(e.data); a.volume = settings.volume / 100; });
+es.addEventListener('play', (e) => { if (queue.length < 20) queue.push(JSON.parse(e.data)); next(); });
+es.addEventListener('skip', () => { if (playing) finish(); });
+es.addEventListener('clear', () => { queue = []; if (playing) finish(); });
+</script>
+</body>
+</html>
