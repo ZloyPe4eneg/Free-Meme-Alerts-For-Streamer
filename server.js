@@ -41,6 +41,7 @@ const newId = () => {
 const DEFAULTS = {
   name: 'Мой стрим', enabled: true, moderation: false,
   cooldownSec: 30, maxDurationSec: 15, volume: 70, showSender: true,
+  randomPosition: true, sizePct: 40,
 };
 const LIMITS = { pending: 30, history: 30 };
 
@@ -81,8 +82,9 @@ function cleanSettings(input, base) {
   const s = { ...base };
   const num = (v, min, max, d) => (Number.isFinite(+v) ? Math.min(max, Math.max(min, Math.round(+v))) : d);
   if (typeof input.name === 'string') s.name = cleanText(input.name, 40) || base.name;
-  for (const k of ['enabled', 'moderation', 'showSender']) if (typeof input[k] === 'boolean') s[k] = input[k];
+  for (const k of ['enabled', 'moderation', 'showSender', 'randomPosition']) if (typeof input[k] === 'boolean') s[k] = input[k];
   if ('cooldownSec' in input) s.cooldownSec = num(input.cooldownSec, 0, 3600, base.cooldownSec);
+  if ('sizePct' in input) s.sizePct = num(input.sizePct, 15, 90, base.sizePct);
   if ('maxDurationSec' in input) s.maxDurationSec = num(input.maxDurationSec, 3, 60, base.maxDurationSec);
   if ('volume' in input) s.volume = num(input.volume, 0, 100, base.volume);
   return s;
@@ -97,6 +99,7 @@ function sse(res, event, data) {
 }
 const overlaySettings = (ch) => ({
   volume: ch.settings.volume, maxDurationSec: ch.settings.maxDurationSec, showSender: ch.settings.showSender,
+  randomPosition: ch.settings.randomPosition, sizePct: ch.settings.sizePct,
 });
 const dashState = (ch) => ({
   settings: ch.settings, pending: ch.pending, history: ch.history,

@@ -6,15 +6,15 @@
 <title>Оверлей — FreeMemeAlerts</title>
 <style>
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
-  #stage { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
-  #card { display: none; flex-direction: column; align-items: center; gap: 1.2vh; max-width: 60vw; }
+  #stage { position: fixed; inset: 0; pointer-events: none; --s: 40; }
+  #card { position: absolute; left: 0; top: 0; display: none; flex-direction: column; align-items: center; gap: 1.2vh; width: max-content; max-width: calc(var(--s) * 1vw); }
   #card.show { display: flex; animation: pop .45s cubic-bezier(.2, 1.4, .4, 1); }
   #card.hide { animation: out .3s ease-in forwards; }
-  video { max-width: 60vw; max-height: 60vh; border-radius: 1.6vh; box-shadow: 0 1vh 5vh rgba(0, 0, 0, .6); background: #000; }
-  #cap { text-align: center; color: #fff; text-shadow: 0 .2vh .8vh #000, 0 0 .3vh #000; max-width: 60vw; }
-  #nick { font-size: 3.4vh; font-weight: 800; color: #b6ff3c; }
+  video { max-width: 100%; max-height: calc(var(--s) * 1vh); border-radius: .8vh; box-shadow: 0 1vh 5vh rgba(0, 0, 0, .6); background: #000; }
+  #cap { text-align: center; color: #fff; text-shadow: 0 .2vh .8vh #000, 0 0 .3vh #000; max-width: 100%; }
+  #nick { font-size: 3.4vh; font-weight: 700; color: #ff4d2e; letter-spacing: -.02em; }
   #msg { font-size: 2.8vh; font-weight: 600; overflow-wrap: anywhere; }
-  #hint { position: fixed; left: 16px; bottom: 16px; font-size: 14px; color: #fff; background: rgba(20, 16, 34, .92); border: 1px solid #8b5cf6; padding: 10px 14px; border-radius: 10px; display: none; cursor: pointer; }
+  #hint { position: fixed; left: 16px; bottom: 16px; font-size: 14px; color: #fff; background: #151517; border: 1px solid #ff4d2e; padding: 10px 14px; border-radius: 6px; display: none; cursor: pointer; }
   @keyframes pop { from { transform: scale(.4) rotate(-6deg); opacity: 0; } to { transform: none; opacity: 1; } }
   @keyframes out { to { transform: scale(.6) translateY(8vh); opacity: 0; } }
 </style>
@@ -34,7 +34,19 @@ const id = location.pathname.split('/').filter(Boolean)[1];
 const key = new URLSearchParams(location.search).get('key') || '';
 const card = document.getElementById('card'), v = document.getElementById('v'), a = document.getElementById('a');
 const hint = document.getElementById('hint');
-let settings = { volume: 70, maxDurationSec: 15, showSender: true };
+let settings = { volume: 70, maxDurationSec: 15, showSender: true, randomPosition: true, sizePct: 40 };
+const stage = document.getElementById('stage');
+
+// показывает карточку и ставит её целиком внутри окна: в случайное место или по центру
+function place() {
+  stage.style.setProperty('--s', settings.sizePct);
+  card.className = 'show';
+  const W = window.innerWidth, H = window.innerHeight, pad = Math.round(Math.min(W, H) * 0.02);
+  const freeX = Math.max(0, W - card.offsetWidth - pad * 2), freeY = Math.max(0, H - card.offsetHeight - pad * 2);
+  const rx = settings.randomPosition ? Math.random() : 0.5, ry = settings.randomPosition ? Math.random() : 0.5;
+  card.style.left = Math.round(pad + freeX * rx) + 'px';
+  card.style.top = Math.round(pad + freeY * ry) + 'px';
+}
 let queue = [], playing = false, endTimer = null, loadTimer = null, soundBlocked = false;
 
 function finish() {
@@ -61,7 +73,7 @@ function next() {
 
   if (!it.meme) { // тест без мема: только подпись
     v.style.display = 'none';
-    card.className = 'show';
+    place();
     endTimer = setTimeout(finish, 5000);
     return;
   }
@@ -69,7 +81,7 @@ function next() {
   const begin = () => {
     v.oncanplay = null;
     clearTimeout(loadTimer);
-    card.className = 'show';
+    place();
     v.play().catch(() => {});
     if (it.meme.audio) {
       a.src = it.meme.audio;

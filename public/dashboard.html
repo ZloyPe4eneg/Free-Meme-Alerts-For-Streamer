@@ -45,9 +45,11 @@
         <label class="check"><input type="checkbox" id="enabled"> Принимать мемы от зрителей</label>
         <label class="check"><input type="checkbox" id="moderation"> Премодерация — показывать только после моего одобрения</label>
         <label class="check"><input type="checkbox" id="showSender"> Показывать ник и сообщение отправителя</label>
+        <label class="check"><input type="checkbox" id="randomPosition"> Случайное место мема на экране (иначе — по центру)</label>
         <label class="field">Кулдаун для зрителя, секунд<input type="number" id="cooldownSec" min="0" max="3600"></label>
         <label class="field">Максимальная длина мема, секунд<input type="number" id="maxDurationSec" min="3" max="60"></label>
         <label class="field">Громкость: <span id="volLabel"></span><input type="range" id="volume" min="0" max="100"></label>
+        <label class="field">Размер мема: <span id="sizeLabel"></span><input type="range" id="sizePct" min="15" max="90"></label>
       </section>
     </div>
 
@@ -77,7 +79,7 @@ if (hashKey) {
   history.replaceState(null, '', location.pathname);
 }
 
-const FIELDS = ['name', 'enabled', 'moderation', 'showSender', 'cooldownSec', 'maxDurationSec', 'volume'];
+const FIELDS = ['name', 'enabled', 'moderation', 'showSender', 'randomPosition', 'cooldownSec', 'maxDurationSec', 'volume', 'sizePct'];
 const links = { viewerUrl: location.origin + '/c/' + id, overlayUrl: '', adminUrl: '' };
 const admin = (what, extra) => api(`channels/${id}/admin`, { key: me.key, do: what, ...extra }).catch(e => { toast(e.message, true); throw e; });
 
@@ -95,7 +97,11 @@ function fillForm(s) {
     if (document.activeElement === input) continue;
     if (input.type === 'checkbox') input.checked = s[f]; else input.value = s[f];
   }
+  showLabels();
+}
+function showLabels() {
   $('#volLabel').textContent = $('#volume').value + '%';
+  $('#sizeLabel').textContent = $('#sizePct').value + '% окна';
 }
 
 function itemRow(it, buttons) {
@@ -150,7 +156,7 @@ async function start() {
   let saveTimer;
   for (const f of FIELDS) {
     $('#' + f).addEventListener('input', () => {
-      $('#volLabel').textContent = $('#volume').value + '%';
+      showLabels();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => admin('settings', { settings: readForm() }), 400);
     });
