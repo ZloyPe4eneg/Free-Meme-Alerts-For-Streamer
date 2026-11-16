@@ -34,7 +34,7 @@
 </div>
 
 <dialog id="preview">
-  <video id="pv" loop muted playsinline></video>
+  <video id="pv" muted playsinline title="Нажмите, чтобы посмотреть ещё раз" style="cursor:pointer"></video>
   <audio id="pa"></audio>
   <h3 id="ptitle"></h3>
   <div class="row">
@@ -110,10 +110,17 @@ function openPreview(m) {
   pa.volume = 0.6;
   if (m.audio) pa.src = m.audio; else pa.removeAttribute('src');
   dlg.showModal();
-  pv.play().catch(() => {});
-  if (m.audio) pa.play().catch(() => {});
+  playPreview();
   tick();
 }
+// Предпросмотр идёт один раз, как на стриме: видео закончилось — звук останавливается.
+function playPreview() {
+  pv.currentTime = 0;
+  pv.play().catch(() => {});
+  if (current && current.audio) { pa.currentTime = 0; pa.play().catch(() => {}); }
+}
+pv.addEventListener('ended', () => pa.pause());
+pv.addEventListener('click', playPreview);
 function stopPreview() {
   pv.pause(); pa.pause();
   pv.removeAttribute('src'); pa.removeAttribute('src');
